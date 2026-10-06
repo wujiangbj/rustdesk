@@ -1,0 +1,50 @@
+name: 自动编译并发布 RustDesk Parallel（跟随官方版本）
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/rustdesk-parallel-upstream-ref.txt"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  read-request:
+    name: 读取官方 RustDesk 版本
+    runs-on: ubuntu-latest
+    outputs:
+      upstream_ref: ${{ steps.request.outputs.upstream_ref }}
+      release_tag: ${{ steps.request.outputs.release_tag }}
+    steps:
+      - name: 检出自动化配置
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: 读取目标版本
+        id: request
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$(grep -vE '^[[:space:]]*(#|$)' .github/rustdesk-parallel-upstream-ref.txt | head -n 1 | xargs)"
+          if [ -z "$ref" ]; then
+            echo "::error::.github/rustdesk-parallel-upstream-ref.txt 中没有可用的官方版本号或标签"
+            exit 1
+          fi
+          version="${ref#v}"
+          safe_version="$(printf '%s' "$version" | sed -E 's/[^0-9A-Za-z._-]+/-/g')"
+          echo "upstream_ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "release_tag=rustdesk-parallel-$safe_version-unsigned" >> "$GITHUB_OUTPUT"
+          echo "准备编译官方 RustDesk 版本：$ref"
+
+  build-and-release:
+    name: 编译并发布 RustDesk Parallel
+    needs: read-request
+    uses: ./.github/workflows/rustdesk-parallel-windows.yml
+    with:
+      upstream_ref: ${{ needs.read-request.outputs.upstream_ref }}
+      publish_release: true
+      sign_release: false
+      release_tag: ${{ needs.read-request.outputs.release_tag }}
+    secrets: inherit
