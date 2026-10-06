@@ -346,10 +346,9 @@ jobs:
           name: ${{ matrix.job.arch == 'aarch64' && 'topmostwindow-artifacts-ARM64' || 'topmostwindow-artifacts-x64' }}
           path: "./rustdesk"
 
-      - name: Prepare isolated A/B controller executables
+      - name: Prepare isolated secondary controller executable
         if: env.UPLOAD_ARTIFACT == 'true' && matrix.job.arch == 'x86_64'
         run: |
-          Copy-Item .\rustdesk\rustdesk.exe .\rustdesk\RustDesk-A.exe
           Copy-Item .\rustdesk\rustdesk.exe .\rustdesk\RustDesk-B.exe
 
       - name: Upload unsigned
