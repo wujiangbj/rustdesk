@@ -2,50 +2,11 @@ name: Build RustDesk Parallel Windows x64
 
 on:
   workflow_dispatch:
-    inputs:
-      upstream_ref:
-        description: "Official rustdesk/rustdesk tag, branch or commit (blank = build this fork)"
-        required: false
-        type: string
-        default: ""
-      publish_release:
-        description: "Publish a GitHub Release"
-        required: true
-        type: boolean
-        default: false
-      sign_release:
-        description: "Authenticode-sign RustDesk-Parallel.exe before publishing"
-        required: true
-        type: boolean
-        default: false
-      release_tag:
-        description: "Optional release tag (blank = auto-generated)"
-        required: false
-        type: string
-        default: ""
-  workflow_call:
-    inputs:
-      upstream_ref:
-        required: false
-        type: string
-        default: ""
-      publish_release:
-        required: false
-        type: boolean
-        default: false
-      sign_release:
-        required: false
-        type: boolean
-        default: false
-      release_tag:
-        required: false
-        type: string
-        default: ""
-    secrets:
-      WINDOWS_SIGN_PFX_BASE64:
-        required: false
-      WINDOWS_SIGN_PFX_PASSWORD:
-        required: false
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/rustdesk-parallel-release-trigger.txt"
 
 permissions:
   contents: write
@@ -63,8 +24,6 @@ env:
 jobs:
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
-    with:
-      upstream_ref: ${{ inputs.upstream_ref }}
 
   build-RustDeskTempTopMostWindow:
     uses: ./.github/workflows/third-party-RustDeskTempTopMostWindow.yml
@@ -104,97 +63,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Switch to official upstream source
-        if: ${{ inputs.upstream_ref != '' }}
-        shell: bash
-        run: |
-          git remote add upstream https://github.com/rustdesk/rustdesk.git || true
-          git fetch upstream --tags --force
-          ref="${{ inputs.upstream_ref }}"
-          if git show-ref --verify --quiet "refs/tags/$ref"; then
-            git checkout --detach "refs/tags/$ref"
-          elif git show-ref --verify --quiet "refs/tags/v$ref"; then
-            git checkout --detach "refs/tags/v$ref"
-          else
-            git fetch upstream "$ref"
-            git checkout --detach FETCH_HEAD
-          fi
-          git submodule sync --recursive
-          git submodule update --init --recursive
-          echo "Build source: $(git rev-parse HEAD)"
-
-      - name: Apply RustDesk-Parallel isolated profile patch
-        shell: pwsh
-        run: |
-          @'
-          from pathlib import Path
-
-          path = Path("src/core_main.rs")
-          text = path.read_text(encoding="utf-8")
-
-          if "set_controller_profile_from_exe_name" not in text:
-              needle = "pub fn core_main() -> Option<Vec<String>> {\\n"
-              if needle not in text:
-                  raise SystemExit("RustDesk-Parallel patch failed: core_main() signature not found")
-
-              helper = r'''#[cfg(windows)]
-fn set_controller_profile_from_exe_name() {
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    let Some(stem) = exe.file_stem().and_then(|x| x.to_str()) else {
-        return;
-    };
-    let stem_lower = stem.to_ascii_lowercase();
-
-    let app_name = if stem_lower == "rustdesk-parallel" || stem_lower.starts_with("rustdesk-parallel-") {
-        Some("RustDesk-Parallel")
-    } else {
-        None
-    };
-
-    if let Some(app_name) = app_name {
-        *hbb_common::config::APP_NAME.write().unwrap() = app_name.to_owned();
-    }
-}
-
-'''
-              text = text.replace(needle, helper + needle, 1)
-
-              init_needle = """pub fn core_main() -> Option<Vec<String>> {
-    if !crate::common::global_init() {
-"""
-              init_repl = """pub fn core_main() -> Option<Vec<String>> {
-    #[cfg(windows)]
-    set_controller_profile_from_exe_name();
-
-    if !crate::common::global_init() {
-"""
-              if init_needle not in text:
-                  raise SystemExit("RustDesk-Parallel patch failed: global_init anchor not found")
-              text = text.replace(init_needle, init_repl, 1)
-              path.write_text(text, encoding="utf-8")
-          else:
-              print("RustDesk-Parallel profile patch already present")
-          '@ | Set-Content -Encoding UTF8 patch_rustdesk_b.py
-          python patch_rustdesk_b.py
-
-      - name: Resolve release version
-        id: meta
-        shell: pwsh
-        run: |
-          $ref = "${{ inputs.upstream_ref }}"
-          if ([string]::IsNullOrWhiteSpace($ref)) {
-            $version = "${{ env.VERSION }}"
-          } else {
-            $version = $ref.Trim()
-            if ($version.StartsWith("v")) { $version = $version.Substring(1) }
-            $version = $version -replace '[^0-9A-Za-z._-]', '-'
-          }
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "RustDesk-Parallel version: $version"
-
-      - name: Create RustDesk-Parallel icon
+      - name: Create RustDesk Parallel icon
         shell: pwsh
         run: |
           python -m pip install --disable-pip-version-check pillow
@@ -437,6 +306,7 @@ fn set_controller_profile_from_exe_name() {
 
       - name: Prepare RustDesk Parallel executable
         if: true && matrix.job.arch == 'x86_64'
+        shell: pwsh
         run: |
           Move-Item .\rustdesk\rustdesk.exe .\rustdesk\RustDesk-Parallel.exe
           @'
@@ -449,74 +319,11 @@ fn set_controller_profile_from_exe_name() {
           2. 完整解压本压缩包后运行 RustDesk-Parallel.exe。
           3. RustDesk Parallel 使用独立的配置、登录状态、地址簿和 IPC 空间，不会覆盖官方 RustDesk 的设置。
           4. 请保留压缩包内全部 DLL 和其他文件，不要只单独复制 EXE。
-          5. 无数字签名版本可能触发 Windows SmartScreen 提示。
+          5. 当前版本没有数字签名，Windows SmartScreen 可能显示提示。
 
           项目名称：RustDesk Parallel
           中文名称：RustDesk 双开版
           '@ | Set-Content -Path .\rustdesk\使用说明.txt -Encoding UTF8
-
-      - name: Sign RustDesk-Parallel.exe
-        if: ${{ inputs.publish_release && inputs.sign_release }}
-        shell: pwsh
-        env:
-          WINDOWS_SIGN_PFX_BASE64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
-          WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGN_PFX_PASSWORD }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_PFX_BASE64)) {
-            throw "Missing GitHub secret WINDOWS_SIGN_PFX_BASE64"
-          }
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_PFX_PASSWORD)) {
-            throw "Missing GitHub secret WINDOWS_SIGN_PFX_PASSWORD"
-          }
-
-          $pfxPath = Join-Path $env:RUNNER_TEMP "rustdesk-parallel-signing.pfx"
-          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_SIGN_PFX_BASE64))
-
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1 -ExpandProperty FullName
-          if (-not $signtool) {
-            throw "signtool.exe was not found on the GitHub-hosted runner"
-          }
-
-          & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfxPath /p $env:WINDOWS_SIGN_PFX_PASSWORD .\rustdesk\RustDesk-Parallel.exe
-          if ($LASTEXITCODE -ne 0) { throw "signtool sign failed with exit code $LASTEXITCODE" }
-
-          & $signtool verify /pa /v .\rustdesk\RustDesk-Parallel.exe
-          if ($LASTEXITCODE -ne 0) { throw "signtool verify failed with exit code $LASTEXITCODE" }
-
-          $signature = Get-AuthenticodeSignature .\rustdesk\RustDesk-Parallel.exe
-          Write-Host "Signer: $($signature.SignerCertificate.Subject)"
-          Write-Host "Status: $($signature.Status)"
-          if ($signature.Status -ne "Valid") {
-            throw "Authenticode validation failed: $($signature.Status) - $($signature.StatusMessage)"
-          }
-
-          Remove-Item $pfxPath -Force
-
-      - name: Package release
-        if: ${{ inputs.publish_release }}
-        id: package
-        shell: pwsh
-        run: |
-          $version = "${{ steps.meta.outputs.version }}"
-          $signed = "${{ inputs.sign_release }}"
-          $flavor = if ($signed -eq "true") { "signed" } else { "unsigned" }
-
-          $tag = "${{ inputs.release_tag }}"
-          if ([string]::IsNullOrWhiteSpace($tag)) {
-            $tag = "rustdesk-parallel-$version-$flavor"
-          }
-          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "flavor=$flavor" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-          $zip = "RustDesk-Parallel-$version-Windows-x64-$flavor.zip"
-          Compress-Archive -Path .\rustdesk\* -DestinationPath $zip -Force
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $zip" | Set-Content "$zip.sha256"
-          "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "Release package: $zip"
-          Write-Host "SHA256: $hash"
 
       - name: Upload Windows x64 artifact
         if: true
@@ -525,24 +332,31 @@ fn set_controller_profile_from_exe_name() {
           name: rustdesk-parallel-windows-x64
           path: rustdesk
 
+      - name: Package RustDesk Parallel
+        shell: pwsh
+        run: |
+          $zip = "RustDesk-Parallel-${{ env.VERSION }}-Windows-x64-unsigned.zip"
+          Compress-Archive -Path .\rustdesk\* -DestinationPath $zip -Force
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $zip" | Set-Content "$zip.sha256"
+
       - name: Publish GitHub Release
-        if: ${{ inputs.publish_release }}
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
-          tag_name: ${{ steps.package.outputs.tag }}
-          name: "RustDesk Parallel ${{ steps.meta.outputs.version }} Windows x64"
+          tag_name: rustdesk-parallel-${{ env.VERSION }}-unsigned
+          name: "RustDesk Parallel ${{ env.VERSION }} Windows x64（无签名版）"
           prerelease: false
           body: |
-            RustDesk Parallel Windows x64 双开版，基于官方 RustDesk 源码版本 `${{ inputs.upstream_ref || '当前仓库 master' }}`。
+            RustDesk Parallel 是用于 Windows 的 RustDesk 双开版。
 
             - 中文名称：RustDesk 双开版
             - 与官方 RustDesk 使用独立的配置、登录状态、地址簿和 IPC 空间
             - 可以与官方 RustDesk 同时运行
             - 使用带橙色 P 标记的独立图标
-            - 程序文件：RustDesk-Parallel.exe
-            - 当前无证书时发布为无数字签名版本，Windows SmartScreen 可能提示
-            - 请完整解压 ZIP 后使用
-
+            - 主程序：RustDesk-Parallel.exe
+            - 当前为无数字签名版本，Windows SmartScreen 可能显示提示
+            - 请完整解压 ZIP 后运行，不要只单独复制 EXE
           files: |
-            ${{ steps.package.outputs.zip }}
-            ${{ steps.package.outputs.zip }}.sha256
+            RustDesk-Parallel-${{ env.VERSION }}-Windows-x64-unsigned.zip
+            RustDesk-Parallel-${{ env.VERSION }}-Windows-x64-unsigned.zip.sha256
+
