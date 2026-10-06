@@ -3,8 +3,18 @@ name: Build RustDesk-B Windows x64
 on:
   workflow_dispatch:
     inputs:
+      upstream_ref:
+        description: "Official rustdesk/rustdesk tag, branch or commit (blank = build this fork)"
+        required: false
+        type: string
+        default: ""
       publish_release:
-        description: "Sign RustDesk-B and publish a GitHub Release"
+        description: "Publish a GitHub Release"
+        required: true
+        type: boolean
+        default: false
+      sign_release:
+        description: "Authenticode-sign RustDesk-B.exe before publishing"
         required: true
         type: boolean
         default: false
@@ -13,6 +23,29 @@ on:
         required: false
         type: string
         default: ""
+  workflow_call:
+    inputs:
+      upstream_ref:
+        required: false
+        type: string
+        default: ""
+      publish_release:
+        required: false
+        type: boolean
+        default: false
+      sign_release:
+        required: false
+        type: boolean
+        default: false
+      release_tag:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      WINDOWS_SIGN_PFX_BASE64:
+        required: false
+      WINDOWS_SIGN_PFX_PASSWORD:
+        required: false
 
 permissions:
   contents: write
@@ -30,6 +63,8 @@ env:
 jobs:
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
+    with:
+      upstream_ref: ${{ inputs.upstream_ref }}
 
   build-RustDeskTempTopMostWindow:
     uses: ./.github/workflows/third-party-RustDeskTempTopMostWindow.yml
@@ -68,6 +103,97 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+
+      - name: Switch to official upstream source
+        if: ${{ inputs.upstream_ref != '' }}
+        shell: bash
+        run: |
+          git remote add upstream https://github.com/rustdesk/rustdesk.git || true
+          git fetch upstream --tags --force
+          ref="${{ inputs.upstream_ref }}"
+          if git show-ref --verify --quiet "refs/tags/$ref"; then
+            git checkout --detach "refs/tags/$ref"
+          elif git show-ref --verify --quiet "refs/tags/v$ref"; then
+            git checkout --detach "refs/tags/v$ref"
+          else
+            git fetch upstream "$ref"
+            git checkout --detach FETCH_HEAD
+          fi
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          echo "Build source: $(git rev-parse HEAD)"
+
+      - name: Apply RustDesk-B isolated profile patch
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          path = Path("src/core_main.rs")
+          text = path.read_text(encoding="utf-8")
+
+          if "set_controller_profile_from_exe_name" not in text:
+              needle = """pub fn core_main() -> Option<Vec<String>> {
+              """
+              if needle not in text:
+                  raise SystemExit("RustDesk-B patch failed: core_main() signature not found")
+
+              helper = r'''#[cfg(windows)]
+fn set_controller_profile_from_exe_name() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(stem) = exe.file_stem().and_then(|x| x.to_str()) else {
+        return;
+    };
+    let stem_lower = stem.to_ascii_lowercase();
+
+    let app_name = if stem_lower == "rustdesk-b" || stem_lower.starts_with("rustdesk-b-") {
+        Some("RustDesk-B")
+    } else {
+        None
+    };
+
+    if let Some(app_name) = app_name {
+        *hbb_common::config::APP_NAME.write().unwrap() = app_name.to_owned();
+    }
+}
+
+'''
+              text = text.replace(needle, helper + needle, 1)
+
+              init_needle = """pub fn core_main() -> Option<Vec<String>> {
+    if !crate::common::global_init() {
+"""
+              init_repl = """pub fn core_main() -> Option<Vec<String>> {
+    #[cfg(windows)]
+    set_controller_profile_from_exe_name();
+
+    if !crate::common::global_init() {
+"""
+              if init_needle not in text:
+                  raise SystemExit("RustDesk-B patch failed: global_init anchor not found")
+              text = text.replace(init_needle, init_repl, 1)
+              path.write_text(text, encoding="utf-8")
+          else:
+              print("RustDesk-B profile patch already present")
+          '@ | Set-Content -Encoding UTF8 patch_rustdesk_b.py
+          python patch_rustdesk_b.py
+
+      - name: Resolve release version
+        id: meta
+        shell: pwsh
+        run: |
+          $ref = "${{ inputs.upstream_ref }}"
+          if ([string]::IsNullOrWhiteSpace($ref)) {
+            $version = "${{ env.VERSION }}"
+          } else {
+            $version = $ref.Trim()
+            if ($version.StartsWith("v")) { $version = $version.Substring(1) }
+            $version = $version -replace '[^0-9A-Za-z._-]', '-'
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "RustDesk-B version: $version"
 
       - name: Create RustDesk-B icon
         shell: pwsh
@@ -303,7 +429,7 @@ jobs:
           Move-Item .\rustdesk\rustdesk.exe .\rustdesk\RustDesk-B.exe
 
       - name: Sign RustDesk-B.exe
-        if: ${{ inputs.publish_release }}
+        if: ${{ inputs.publish_release && inputs.sign_release }}
         shell: pwsh
         env:
           WINDOWS_SIGN_PFX_BASE64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
@@ -341,21 +467,27 @@ jobs:
 
           Remove-Item $pfxPath -Force
 
-      - name: Package signed release
+      - name: Package release
         if: ${{ inputs.publish_release }}
         id: package
         shell: pwsh
         run: |
+          $version = "${{ steps.meta.outputs.version }}"
+          $signed = "${{ inputs.sign_release }}"
+          $flavor = if ($signed -eq "true") { "signed" } else { "unsigned" }
+
           $tag = "${{ inputs.release_tag }}"
           if ([string]::IsNullOrWhiteSpace($tag)) {
-            $tag = "rustdesk-b-${{ env.VERSION }}-build-${{ github.run_number }}"
+            $tag = "rustdesk-b-$version-$flavor"
           }
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "flavor=$flavor" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-          $zip = "RustDesk-B-${{ env.VERSION }}-Windows-x64-signed.zip"
+          $zip = "RustDesk-B-$version-Windows-x64-$flavor.zip"
           Compress-Archive -Path .\rustdesk\* -DestinationPath $zip -Force
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zip" | Set-Content "$zip.sha256"
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Release package: $zip"
           Write-Host "SHA256: $hash"
 
@@ -366,15 +498,20 @@ jobs:
           name: rustdesk-b-windows-x64
           path: rustdesk
 
-      - name: Publish signed GitHub Release
+      - name: Publish GitHub Release
         if: ${{ inputs.publish_release }}
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ steps.package.outputs.tag }}
-          name: "RustDesk-B ${{ steps.package.outputs.tag }}"
-          prerelease: true
-          generate_release_notes: true
-          files: |
-            RustDesk-B-${{ env.VERSION }}-Windows-x64-signed.zip
-            RustDesk-B-${{ env.VERSION }}-Windows-x64-signed.zip.sha256
+          name: "RustDesk-B ${{ steps.meta.outputs.version }} Windows x64 (${{ steps.package.outputs.flavor }})"
+          prerelease: false
+          body: |
+            RustDesk-B Windows x64 portable build based on official RustDesk ref `${{ inputs.upstream_ref || 'fork master' }}`.
 
+            - Independent RustDesk-B configuration/profile namespace
+            - Distinct B icon
+            - Build type: ${{ steps.package.outputs.flavor }}
+            - Keep all extracted files together
+          files: |
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.package.outputs.zip }}.sha256
