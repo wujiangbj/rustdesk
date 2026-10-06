@@ -440,6 +440,21 @@ fn set_parallel_profile_from_exe_name() {
         if: true && matrix.job.arch == 'x86_64'
         run: |
           Move-Item .\rustdesk\rustdesk.exe .\rustdesk\RustDesk-Parallel.exe
+          @'
+          RustDesk Parallel（双开版）使用说明
+
+          这是基于 RustDesk 开源项目构建的非官方自定义版本，主要用于解决同一台 Windows 电脑同时运行两个相互独立的 RustDesk 客户端的问题。
+
+          使用方式：
+          1. 官方 RustDesk 保持原样使用，不需要修改。
+          2. 完整解压本压缩包后，运行 RustDesk-Parallel.exe。
+          3. RustDesk Parallel 使用独立的配置、登录状态、地址簿和 IPC 空间，不会覆盖官方 RustDesk 的配置。
+          4. 请不要只单独复制 RustDesk-Parallel.exe；运行所需的 DLL 和其他文件需要保留在同一目录中。
+          5. 当前发布版本为无数字签名版本时，Windows SmartScreen 可能显示安全提醒。
+
+          项目名称：RustDesk Parallel
+          中文名称：RustDesk 双开版
+          '@ | Set-Content -Path .\rustdesk\使用说明.txt -Encoding UTF8
 
       - name: 对 RustDesk-Parallel.exe 进行 Authenticode 签名
         if: ${{ inputs.publish_release && inputs.sign_release }}
@@ -488,6 +503,7 @@ fn set_parallel_profile_from_exe_name() {
           $version = "${{ steps.meta.outputs.version }}"
           $signed = "${{ inputs.sign_release }}"
           $flavor = if ($signed -eq "true") { "signed" } else { "unsigned" }
+          $flavorLabel = if ($signed -eq "true") { "签名版" } else { "无签名版" }
 
           $tag = "${{ inputs.release_tag }}"
           if ([string]::IsNullOrWhiteSpace($tag)) {
@@ -495,6 +511,7 @@ fn set_parallel_profile_from_exe_name() {
           }
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "flavor=$flavor" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "flavor_label=$flavorLabel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
           $zip = "RustDesk-Parallel-$version-Windows-x64-$flavor.zip"
           Compress-Archive -Path .\rustdesk\* -DestinationPath $zip -Force
@@ -516,7 +533,7 @@ fn set_parallel_profile_from_exe_name() {
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ steps.package.outputs.tag }}
-          name: "RustDesk Parallel ${{ steps.meta.outputs.version }} Windows x64 (${{ steps.package.outputs.flavor }})"
+          name: "RustDesk Parallel ${{ steps.meta.outputs.version }} Windows x64（${{ steps.package.outputs.flavor_label }}）"
           prerelease: false
           body: |
             RustDesk Parallel Windows x64 双开版，基于官方 RustDesk 源码版本 `${{ inputs.upstream_ref || 'fork master' }}`.
@@ -524,7 +541,7 @@ fn set_parallel_profile_from_exe_name() {
             - 与官方 RustDesk 使用完全独立的配置、登录状态、地址簿和 IPC 空间
             - 可与官方 RustDesk 同时运行，用于双开
             - 使用带橙色 P 标记的独立图标
-            - 构建类型：${{ steps.package.outputs.flavor }}
+            - 构建类型：${{ steps.package.outputs.flavor_label }}
             - 请完整解压 ZIP 后运行 RustDesk-Parallel.exe，不要只单独复制 EXE
           files: |
             ${{ steps.package.outputs.zip }}
