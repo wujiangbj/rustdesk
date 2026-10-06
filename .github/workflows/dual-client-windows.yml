@@ -133,8 +133,7 @@ jobs:
           text = path.read_text(encoding="utf-8")
 
           if "set_controller_profile_from_exe_name" not in text:
-              needle = """pub fn core_main() -> Option<Vec<String>> {
-              """
+              needle = "pub fn core_main() -> Option<Vec<String>> {\\n"
               if needle not in text:
                   raise SystemExit("RustDesk-B patch failed: core_main() signature not found")
 
