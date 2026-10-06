@@ -14,13 +14,13 @@ permissions:
 
 jobs:
   dispatch:
-    name: 读取版本并启动 RustDesk Parallel 编译
+    name: 启动 RustDesk Parallel 编译发布
     runs-on: ubuntu-latest
     steps:
-      - name: 检出自动化配置
+      - name: 检出版本配置
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: 读取目标版本并触发编译
+      - name: 检查目标版本并启动编译
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -28,15 +28,8 @@ jobs:
           set -euo pipefail
           ref="$(grep -vE '^[[:space:]]*(#|$)' .github/rustdesk-parallel-upstream-ref.txt | head -n 1 | xargs)"
           if [ -z "$ref" ]; then
-            echo "::error::.github/rustdesk-parallel-upstream-ref.txt 中没有可用的官方版本号或标签"
+            echo "::error::.github/rustdesk-parallel-upstream-ref.txt 中没有目标版本号"
             exit 1
           fi
-
-          version="${ref#v}"
-          safe_version="$(printf '%s' "$version" | sed -E 's/[^0-9A-Za-z._-]+/-/g')"
-          release_tag="rustdesk-parallel-$safe_version-unsigned"
-
-          echo "准备编译官方 RustDesk 版本：$ref"
-          echo "Release 标签：$release_tag"
-
-          gh workflow run rustdesk-parallel-windows.yml             --repo "${{ github.repository }}"             --ref master             -f upstream_ref="$ref"             -f publish_release=true             -f sign_release=false             -f release_tag="$release_tag"
+          echo "当前 RustDesk Parallel 目标版本：$ref"
+          gh workflow run rustdesk-parallel-windows.yml             --repo "${{ github.repository }}"             --ref master
