@@ -60,10 +60,10 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
-          INPUT_PUBLISH_RELEASE: ${{ needs.prepare.outputs.publish_release == 'true' }}
-          INPUT_SIGN_RELEASE: ${{ needs.prepare.outputs.sign_release }}
-          INPUT_RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          INPUT_UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          INPUT_PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          INPUT_SIGN_RELEASE: ${{ inputs.sign_release }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
 
@@ -148,7 +148,7 @@ jobs:
           submodules: recursive
 
       - name: Switch to official upstream source
-        if: ${{ inputs.upstream_ref != '' }}
+        if: ${{ needs.prepare.outputs.upstream_ref != '' }}
         shell: bash
         run: |
           git remote add upstream https://github.com/rustdesk/rustdesk.git || true
@@ -579,7 +579,7 @@ fn set_parallel_profile_from_exe_name() {
           name: "RustDesk Parallel ${{ steps.meta.outputs.version }} Windows x64（${{ steps.package.outputs.flavor_label }}）"
           prerelease: false
           body: |
-            RustDesk Parallel Windows x64 双开版，基于官方 RustDesk 源码版本 `${{ inputs.upstream_ref || 'fork master' }}`.
+            RustDesk Parallel Windows x64 双开版，基于官方 RustDesk 源码版本 `${{ needs.prepare.outputs.upstream_ref || '当前仓库 master' }}`.
 
             - 与官方 RustDesk 使用完全独立的配置、登录状态、地址簿和 IPC 空间
             - 可与官方 RustDesk 同时运行，用于双开
