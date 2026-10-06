@@ -39,9 +39,7 @@ fn set_controller_profile_from_exe_name() {
     };
     let stem_lower = stem.to_ascii_lowercase();
 
-    let app_name = if stem_lower == "rustdesk-a" || stem_lower.starts_with("rustdesk-a-") {
-        Some("RustDesk-A")
-    } else if stem_lower == "rustdesk-b" || stem_lower.starts_with("rustdesk-b-") {
+    let app_name = if stem_lower == "rustdesk-b" || stem_lower.starts_with("rustdesk-b-") {
         Some("RustDesk-B")
     } else {
         None
@@ -53,7 +51,7 @@ fn set_controller_profile_from_exe_name() {
 }
 
 pub fn core_main() -> Option<Vec<String>> {
-    // Select the isolated controller profile before RustDesk reads configuration,
+    // Select the isolated secondary controller profile before RustDesk reads configuration,
     // address-book, login or IPC state.
     #[cfg(windows)]
     set_controller_profile_from_exe_name();
