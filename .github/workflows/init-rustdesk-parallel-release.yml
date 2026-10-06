@@ -8,7 +8,7 @@ on:
       - ".github/workflows/init-rustdesk-parallel-release.yml"
 
 permissions:
-  actions: read
+  actions: write
   contents: read
 
 jobs:
@@ -16,8 +16,10 @@ jobs:
     name: 检查工作流注册状态
     runs-on: ubuntu-latest
     steps:
-      - name: 输出 RustDesk Parallel 工作流信息
+      - name: 输出工作流信息并测试已知可用模板
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/${{ github.repository }}/actions/workflows"             --jq '.workflows[] | select(.path | contains("rustdesk-parallel")) | {id,name,path,state}'
+          gh api "repos/${{ github.repository }}/actions/workflows"             --jq '.workflows[] | select((.path | contains("rustdesk-parallel")) or (.path | contains("tmp-known-good"))) | {id,name,path,state}'
+          echo "---- dispatch tmp-known-good ----"
+          gh workflow run tmp-known-good.yml --repo "${{ github.repository }}" --ref master
