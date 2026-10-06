@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       sign_release:
-        description: "Authenticode-sign RustDesk-Parallel.exe before publishing"
+        description: "发布前使用 Authenticode 对 RustDesk-Parallel.exe 进行签名（当前无证书时请关闭）"
         required: true
         type: boolean
         default: false
@@ -132,13 +132,13 @@ jobs:
           path = Path("src/core_main.rs")
           text = path.read_text(encoding="utf-8")
 
-          if "set_controller_profile_from_exe_name" not in text:
+          if "set_parallel_profile_from_exe_name" not in text:
               needle = "pub fn core_main() -> Option<Vec<String>> {\\n"
               if needle not in text:
                   raise SystemExit("RustDesk Parallel 补丁失败: core_main() signature not found")
 
               helper = r'''#[cfg(windows)]
-fn set_controller_profile_from_exe_name() {
+fn set_parallel_profile_from_exe_name() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
@@ -148,7 +148,7 @@ fn set_controller_profile_from_exe_name() {
     let stem_lower = stem.to_ascii_lowercase();
 
     let app_name = if stem_lower == "rustdesk-parallel" || stem_lower.starts_with("rustdesk-parallel-") {
-        Some("RustDesk Parallel")
+        Some("RustDesk-Parallel")
     } else {
         None
     };
@@ -166,7 +166,7 @@ fn set_controller_profile_from_exe_name() {
 """
               init_repl = """pub fn core_main() -> Option<Vec<String>> {
     #[cfg(windows)]
-    set_controller_profile_from_exe_name();
+    set_parallel_profile_from_exe_name();
 
     if !crate::common::global_init() {
 """
@@ -176,8 +176,8 @@ fn set_controller_profile_from_exe_name() {
               path.write_text(text, encoding="utf-8")
           else:
               print("RustDesk Parallel 独立配置补丁已存在")
-          '@ | Set-Content -Encoding UTF8 patch_rustdesk_b.py
-          python patch_rustdesk_b.py
+          '@ | Set-Content -Encoding UTF8 patch_rustdesk_parallel.py
+          python patch_rustdesk_parallel.py
 
       - name: 确定发布版本号
         id: meta
@@ -220,8 +220,8 @@ fn set_controller_profile_from_exe_name() {
           draw.text((x, y), "P", font=font, fill=(255, 255, 255, 255))
 
           im.save(icon, format="ICO", sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
-          '@ | Set-Content -Encoding UTF8 make_b_icon.py
-          python make_b_icon.py
+          '@ | Set-Content -Encoding UTF8 make_parallel_icon.py
+          python make_parallel_icon.py
 
       - name: 写入中文程序说明
         shell: pwsh
@@ -496,7 +496,7 @@ fn set_controller_profile_from_exe_name() {
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "flavor=$flavor" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-          $zip = "RustDesk Parallel-$version-Windows-x64-$flavor.zip"
+          $zip = "RustDesk-Parallel-$version-Windows-x64-$flavor.zip"
           Compress-Archive -Path .\rustdesk\* -DestinationPath $zip -Force
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zip" | Set-Content "$zip.sha256"
