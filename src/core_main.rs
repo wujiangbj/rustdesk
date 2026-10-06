@@ -29,7 +29,35 @@ macro_rules! my_println{
 /// If it returns [`None`], then the process will terminate, and flutter gui will not be started.
 /// If it returns [`Some`], then the process will continue, and flutter gui will be started.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(windows)]
+fn set_controller_profile_from_exe_name() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(stem) = exe.file_stem().and_then(|x| x.to_str()) else {
+        return;
+    };
+    let stem_lower = stem.to_ascii_lowercase();
+
+    let app_name = if stem_lower == "rustdesk-a" || stem_lower.starts_with("rustdesk-a-") {
+        Some("RustDesk-A")
+    } else if stem_lower == "rustdesk-b" || stem_lower.starts_with("rustdesk-b-") {
+        Some("RustDesk-B")
+    } else {
+        None
+    };
+
+    if let Some(app_name) = app_name {
+        *hbb_common::config::APP_NAME.write().unwrap() = app_name.to_owned();
+    }
+}
+
 pub fn core_main() -> Option<Vec<String>> {
+    // Select the isolated controller profile before RustDesk reads configuration,
+    // address-book, login or IPC state.
+    #[cfg(windows)]
+    set_controller_profile_from_exe_name();
+
     if !crate::common::global_init() {
         return None;
     }
