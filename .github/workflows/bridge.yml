@@ -6,7 +6,7 @@ on:
   workflow_call:
     inputs:
       upstream_ref:
-        description: "Official rustdesk/rustdesk tag, branch or commit to build from"
+        description: "用于编译的官方 RustDesk 标签、分支或提交"
         required: false
         type: string
         default: ""
