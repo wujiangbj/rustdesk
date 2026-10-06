@@ -9,23 +9,21 @@ on:
       - ".github/workflows/auto-rustdesk-parallel-release.yml"
 
 permissions:
-  actions: read
-  contents: write
+  actions: write
+  contents: read
 
 jobs:
-  read-request:
-    name: 读取官方 RustDesk 版本
+  dispatch:
+    name: 读取版本并启动 RustDesk Parallel 编译
     runs-on: ubuntu-latest
-    outputs:
-      upstream_ref: ${{ steps.request.outputs.upstream_ref }}
-      release_tag: ${{ steps.request.outputs.release_tag }}
     steps:
       - name: 检出自动化配置
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: 读取目标版本
-        id: request
+      - name: 读取目标版本并触发编译
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ref="$(grep -vE '^[[:space:]]*(#|$)' .github/rustdesk-parallel-upstream-ref.txt | head -n 1 | xargs)"
@@ -33,19 +31,12 @@ jobs:
             echo "::error::.github/rustdesk-parallel-upstream-ref.txt 中没有可用的官方版本号或标签"
             exit 1
           fi
+
           version="${ref#v}"
           safe_version="$(printf '%s' "$version" | sed -E 's/[^0-9A-Za-z._-]+/-/g')"
-          echo "upstream_ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "release_tag=rustdesk-parallel-$safe_version-unsigned" >> "$GITHUB_OUTPUT"
-          echo "准备编译官方 RustDesk 版本：$ref"
+          release_tag="rustdesk-parallel-$safe_version-unsigned"
 
-  build-and-release:
-    name: 编译并发布 RustDesk Parallel
-    needs: read-request
-    uses: ./.github/workflows/rustdesk-parallel-windows.yml
-    with:
-      upstream_ref: ${{ needs.read-request.outputs.upstream_ref }}
-      publish_release: true
-      sign_release: false
-      release_tag: ${{ needs.read-request.outputs.release_tag }}
-    secrets: inherit
+          echo "准备编译官方 RustDesk 版本：$ref"
+          echo "Release 标签：$release_tag"
+
+          gh workflow run rustdesk-parallel-windows.yml             --repo "${{ github.repository }}"             --ref master             -f upstream_ref="$ref"             -f publish_release=true             -f sign_release=false             -f release_tag="$release_tag"
