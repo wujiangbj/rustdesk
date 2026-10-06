@@ -1,1 +1,2 @@
 1.5.0
+# 当前 RustDesk Parallel 双开版目标版本
