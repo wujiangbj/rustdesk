@@ -30,7 +30,7 @@ macro_rules! my_println{
 /// If it returns [`Some`], then the process will continue, and flutter gui will be started.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[cfg(windows)]
-fn set_controller_profile_from_exe_name() {
+fn set_parallel_profile_from_exe_name() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
@@ -39,8 +39,8 @@ fn set_controller_profile_from_exe_name() {
     };
     let stem_lower = stem.to_ascii_lowercase();
 
-    let app_name = if stem_lower == "rustdesk-b" || stem_lower.starts_with("rustdesk-b-") {
-        Some("RustDesk-B")
+    let app_name = if stem_lower == "rustdesk-parallel" || stem_lower.starts_with("rustdesk-parallel-") {
+        Some("RustDesk-Parallel")
     } else {
         None
     };
@@ -54,7 +54,7 @@ pub fn core_main() -> Option<Vec<String>> {
     // Select the isolated secondary controller profile before RustDesk reads configuration,
     // address-book, login or IPC state.
     #[cfg(windows)]
-    set_controller_profile_from_exe_name();
+    set_parallel_profile_from_exe_name();
 
     if !crate::common::global_init() {
         return None;
