@@ -23,6 +23,11 @@ on:
         required: false
         type: string
         default: ""
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/rustdesk-parallel-upstream-ref.txt"
 
 permissions:
   contents: write
@@ -38,10 +43,71 @@ env:
   SIGN_BASE_URL: "-2"
 
 jobs:
+  prepare:
+    name: 读取 RustDesk Parallel 构建参数
+    runs-on: ubuntu-latest
+    outputs:
+      upstream_ref: ${{ steps.meta.outputs.upstream_ref }}
+      publish_release: ${{ steps.meta.outputs.publish_release }}
+      sign_release: ${{ steps.meta.outputs.sign_release }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+    steps:
+      - name: 检出构建配置
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: 解析版本与发布参数
+        id: meta
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
+          INPUT_PUBLISH_RELEASE: ${{ needs.prepare.outputs.publish_release == 'true' }}
+          INPUT_SIGN_RELEASE: ${{ needs.prepare.outputs.sign_release }}
+          INPUT_RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            ref="$(grep -vE '^[[:space:]]*(#|$)' .github/rustdesk-parallel-upstream-ref.txt | head -n 1 | xargs)"
+            publish_release="true"
+            sign_release="false"
+            release_tag=""
+          else
+            ref="$INPUT_UPSTREAM_REF"
+            publish_release="${INPUT_PUBLISH_RELEASE:-false}"
+            sign_release="${INPUT_SIGN_RELEASE:-false}"
+            release_tag="$INPUT_RELEASE_TAG"
+          fi
+
+          if [ "$EVENT_NAME" = "push" ] && [ -z "$ref" ]; then
+            echo "::error::.github/rustdesk-parallel-upstream-ref.txt 中没有可用的官方版本号或标签"
+            exit 1
+          fi
+
+          if [ -z "$release_tag" ] && [ "$publish_release" = "true" ]; then
+            version="${ref#v}"
+            if [ -z "$version" ]; then version="${VERSION}"; fi
+            safe_version="$(printf '%s' "$version" | sed -E 's/[^0-9A-Za-z._-]+/-/g')"
+            flavor="unsigned"
+            if [ "$sign_release" = "true" ]; then flavor="signed"; fi
+            release_tag="rustdesk-parallel-$safe_version-$flavor"
+          fi
+
+          echo "upstream_ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "publish_release=$publish_release" >> "$GITHUB_OUTPUT"
+          echo "sign_release=$sign_release" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+          echo "官方源码版本：${ref:-当前仓库}"
+          echo "发布 Release：$publish_release"
+          echo "数字签名：$sign_release"
+          echo "Release 标签：${release_tag:-不发布}"
+
   generate-bridge:
+    needs: prepare
     uses: ./.github/workflows/bridge.yml
     with:
-      upstream_ref: ${{ inputs.upstream_ref }}
+      upstream_ref: ${{ needs.prepare.outputs.upstream_ref }}
 
   build-RustDeskTempTopMostWindow:
     uses: ./.github/workflows/third-party-RustDeskTempTopMostWindow.yml
@@ -54,7 +120,7 @@ jobs:
 
   build-for-windows-flutter:
     name: ${{ matrix.job.target }}
-    needs: [build-RustDeskTempTopMostWindow, generate-bridge]
+    needs: [prepare, build-RustDeskTempTopMostWindow, generate-bridge]
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
@@ -87,7 +153,7 @@ jobs:
         run: |
           git remote add upstream https://github.com/rustdesk/rustdesk.git || true
           git fetch upstream --tags --force
-          ref="${{ inputs.upstream_ref }}"
+          ref="${{ needs.prepare.outputs.upstream_ref }}"
           if git show-ref --verify --quiet "refs/tags/$ref"; then
             git checkout --detach "refs/tags/$ref"
           elif git show-ref --verify --quiet "refs/tags/v$ref"; then
@@ -160,7 +226,7 @@ fn set_parallel_profile_from_exe_name() {
         id: meta
         shell: pwsh
         run: |
-          $ref = "${{ inputs.upstream_ref }}"
+          $ref = "${{ needs.prepare.outputs.upstream_ref }}"
           if ([string]::IsNullOrWhiteSpace($ref)) {
             $version = "${{ env.VERSION }}"
           } else {
@@ -434,7 +500,7 @@ fn set_parallel_profile_from_exe_name() {
           '@ | Set-Content -Path .\rustdesk\使用说明.txt -Encoding UTF8
 
       - name: 对 RustDesk-Parallel.exe 进行 Authenticode 签名
-        if: ${{ inputs.publish_release && inputs.sign_release }}
+        if: ${{ needs.prepare.outputs.publish_release == 'true' && needs.prepare.outputs.sign_release == 'true' }}
         shell: pwsh
         env:
           WINDOWS_SIGN_PFX_BASE64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
@@ -473,16 +539,16 @@ fn set_parallel_profile_from_exe_name() {
           Remove-Item $pfxPath -Force
 
       - name: 打包 Release
-        if: ${{ inputs.publish_release }}
+        if: ${{ needs.prepare.outputs.publish_release == 'true' }}
         id: package
         shell: pwsh
         run: |
           $version = "${{ steps.meta.outputs.version }}"
-          $signed = "${{ inputs.sign_release }}"
+          $signed = "${{ needs.prepare.outputs.sign_release }}"
           $flavor = if ($signed -eq "true") { "signed" } else { "unsigned" }
           $flavorLabel = if ($signed -eq "true") { "签名版" } else { "无签名版" }
 
-          $tag = "${{ inputs.release_tag }}"
+          $tag = "${{ needs.prepare.outputs.release_tag }}"
           if ([string]::IsNullOrWhiteSpace($tag)) {
             $tag = "rustdesk-parallel-$version-$flavor"
           }
@@ -506,7 +572,7 @@ fn set_parallel_profile_from_exe_name() {
           path: rustdesk
 
       - name: 发布到 GitHub Releases
-        if: ${{ inputs.publish_release }}
+        if: ${{ needs.prepare.outputs.publish_release == 'true' }}
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ steps.package.outputs.tag }}
