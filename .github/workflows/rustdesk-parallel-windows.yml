@@ -23,29 +23,6 @@ on:
         required: false
         type: string
         default: ""
-  workflow_call:
-    inputs:
-      upstream_ref:
-        required: false
-        type: string
-        default: ""
-      publish_release:
-        required: false
-        type: boolean
-        default: false
-      sign_release:
-        required: false
-        type: boolean
-        default: false
-      release_tag:
-        required: false
-        type: string
-        default: ""
-    secrets:
-      WINDOWS_SIGN_PFX_BASE64:
-        required: false
-      WINDOWS_SIGN_PFX_PASSWORD:
-        required: false
 
 permissions:
   contents: write
