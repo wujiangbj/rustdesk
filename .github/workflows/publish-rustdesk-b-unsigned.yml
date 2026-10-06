@@ -1,0 +1,45 @@
+name: Publish RustDesk-B unsigned release
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/publish-rustdesk-b-unsigned.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download tested Windows x64 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 37457727778             --repo "${{ github.repository }}"             --name "rustdesk-unsigned-windows-x86_64"             --dir rustdesk
+
+      - name: Package unsigned RustDesk-B
+        run: |
+          zip -r RustDesk-B-1.5.0-Windows-x64-unsigned.zip rustdesk
+          sha256sum RustDesk-B-1.5.0-Windows-x64-unsigned.zip             > RustDesk-B-1.5.0-Windows-x64-unsigned.zip.sha256
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
+        with:
+          tag_name: rustdesk-b-1.5.0-unsigned
+          name: "RustDesk-B 1.5.0 Windows x64 (Unsigned)"
+          body: |
+            RustDesk-B Windows x64 portable build.
+
+            - Built from commit 419bba370f8c1f1c71e36813022a731bb74d3454
+            - Isolated secondary controller profile: RustDesk-B
+            - Distinct B icon
+            - Unsigned build: Windows SmartScreen may show a warning
+            - Keep all extracted files together; do not run RustDesk-B.exe by itself
+          prerelease: true
+          files: |
+            RustDesk-B-1.5.0-Windows-x64-unsigned.zip
+            RustDesk-B-1.5.0-Windows-x64-unsigned.zip.sha256
