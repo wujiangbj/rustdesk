@@ -1,0 +1,23 @@
+name: 初始化 RustDesk Parallel 1.5.0 发布
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/init-rustdesk-parallel-release.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    name: 启动 RustDesk Parallel 1.5.0 编译发布
+    runs-on: ubuntu-latest
+    steps:
+      - name: 触发正式编译工作流
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run rustdesk-parallel-windows.yml             --repo "${{ github.repository }}"             --ref master             -f upstream_ref=1.5.0             -f publish_release=true             -f sign_release=false             -f release_tag=rustdesk-parallel-1.5.0-unsigned
