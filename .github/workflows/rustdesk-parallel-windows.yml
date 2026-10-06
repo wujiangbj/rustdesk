@@ -2,14 +2,6 @@ name: Build RustDesk Parallel Windows x64
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
-    paths:
-      - ".github/rustdesk-parallel-release-trigger.txt"
-
-permissions:
-  contents: write
 
 env:
   SCITER_RUST_VERSION: "1.75"
@@ -91,19 +83,6 @@ jobs:
           im.save(icon, format="ICO", sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
           '@ | Set-Content -Encoding UTF8 make_parallel_icon.py
           python make_parallel_icon.py
-
-      - name: Write Chinese program description
-        shell: pwsh
-        run: |
-          $rc = "flutter/windows/runner/Runner.rc"
-          $text = Get-Content $rc -Raw -Encoding UTF8
-          $text = $text.Replace('VALUE "CompanyName", "Purslane Tech Pte. Ltd." "\0"', 'VALUE "CompanyName", "RustDesk Parallel 自定义构建" "\0"')
-          $text = $text.Replace('VALUE "FileDescription", "RustDesk Remote Desktop" "\0"', 'VALUE "FileDescription", "RustDesk 双开版（Parallel）" "\0"')
-          $text = $text.Replace('VALUE "InternalName", "rustdesk" "\0"', 'VALUE "InternalName", "RustDesk-Parallel" "\0"')
-          $text = $text.Replace('VALUE "LegalCopyright", "Copyright © 2026 Purslane Tech Pte. Ltd. All rights reserved." "\0"', 'VALUE "LegalCopyright", "基于 RustDesk 开源项目的非官方自定义构建" "\0"')
-          $text = $text.Replace('VALUE "OriginalFilename", "rustdesk.exe" "\0"', 'VALUE "OriginalFilename", "RustDesk-Parallel.exe" "\0"')
-          $text = $text.Replace('VALUE "ProductName", "RustDesk" "\0"', 'VALUE "ProductName", "RustDesk Parallel 双开版" "\0"')
-          Set-Content -Path $rc -Value $text -Encoding UTF8
 
       - name: Restore bridge files
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -304,59 +283,15 @@ jobs:
           name: ${{ matrix.job.arch == 'aarch64' && 'topmostwindow-artifacts-ARM64' || 'topmostwindow-artifacts-x64' }}
           path: "./rustdesk"
 
-      - name: Prepare RustDesk Parallel executable
+      - name: Prepare isolated secondary controller executable
         if: true && matrix.job.arch == 'x86_64'
-        shell: pwsh
         run: |
           Move-Item .\rustdesk\rustdesk.exe .\rustdesk\RustDesk-Parallel.exe
-          @'
-          RustDesk Parallel（双开版）使用说明
 
-          这是基于 RustDesk 开源项目构建的非官方自定义版本，用于在同一台 Windows 电脑上同时运行官方 RustDesk 和第二个完全独立的 RustDesk 客户端。
-
-          使用方法：
-          1. 官方 RustDesk 保持原样使用，无需修改。
-          2. 完整解压本压缩包后运行 RustDesk-Parallel.exe。
-          3. RustDesk Parallel 使用独立的配置、登录状态、地址簿和 IPC 空间，不会覆盖官方 RustDesk 的设置。
-          4. 请保留压缩包内全部 DLL 和其他文件，不要只单独复制 EXE。
-          5. 当前版本没有数字签名，Windows SmartScreen 可能显示提示。
-
-          项目名称：RustDesk Parallel
-          中文名称：RustDesk 双开版
-          '@ | Set-Content -Path .\rustdesk\使用说明.txt -Encoding UTF8
-
-      - name: Upload Windows x64 artifact
+      - name: Upload unsigned
         if: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: rustdesk-parallel-windows-x64
+          name: rustdesk-parallel-windows-${{ matrix.job.arch }}
           path: rustdesk
-
-      - name: Package RustDesk Parallel
-        shell: pwsh
-        run: |
-          $zip = "RustDesk-Parallel-${{ env.VERSION }}-Windows-x64-unsigned.zip"
-          Compress-Archive -Path .\rustdesk\* -DestinationPath $zip -Force
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $zip" | Set-Content "$zip.sha256"
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
-        with:
-          tag_name: rustdesk-parallel-${{ env.VERSION }}-unsigned
-          name: "RustDesk Parallel ${{ env.VERSION }} Windows x64（无签名版）"
-          prerelease: false
-          body: |
-            RustDesk Parallel 是用于 Windows 的 RustDesk 双开版。
-
-            - 中文名称：RustDesk 双开版
-            - 与官方 RustDesk 使用独立的配置、登录状态、地址簿和 IPC 空间
-            - 可以与官方 RustDesk 同时运行
-            - 使用带橙色 P 标记的独立图标
-            - 主程序：RustDesk-Parallel.exe
-            - 当前为无数字签名版本，Windows SmartScreen 可能显示提示
-            - 请完整解压 ZIP 后运行，不要只单独复制 EXE
-          files: |
-            RustDesk-Parallel-${{ env.VERSION }}-Windows-x64-unsigned.zip
-            RustDesk-Parallel-${{ env.VERSION }}-Windows-x64-unsigned.zip.sha256
 
