@@ -460,6 +460,10 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
     if (isWindows && !bind.isDisableInstallation()) {
       if (!bind.mainIsInstalled()) {
+        // Parallel is used as a portable controller; it needs no host installation.
+        if (appName == 'RustDesk-Parallel') {
+          return const SizedBox.shrink();
+        }
         return buildInstallCard(
             "", bind.isOutgoingOnly() ? "" : "install_tip", "Install",
             () async {
